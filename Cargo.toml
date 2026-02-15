@@ -20,9 +20,12 @@ bin-dir = "lirik-x86_64-unknown-linux-musl/{ bin }"
 [dependencies]
 crossterm = "0.28"
 dirs = "6"
+image = "0.25"
+libc = "0.2"
 open = "5"
 ratatui = "0.29"
-reqwest = { version = "0.12", features = ["json"] }
+ratatui-image = "4.1"
+reqwest = { version = "0.12", features = ["json", "blocking"] }
 rspotify = { version = "0.13", features = ["cli"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

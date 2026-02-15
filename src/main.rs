@@ -59,8 +59,11 @@ fn parse_offset(args: &[String]) -> i64 {
         .unwrap_or_else(|| config::load().map(|c| c.lyrics_offset_ms).unwrap_or(0))
 }
 
-#[tokio::main]
-async fn main() {
+fn run_async(f: impl std::future::Future<Output = ()>) {
+    tokio::runtime::Runtime::new().unwrap().block_on(f);
+}
+
+fn main() {
     let args: Vec<String> = env::args().collect();
 
     match args.get(1).map(|s| s.as_str()) {
@@ -94,30 +97,26 @@ commands:
   -h, --help            show this help
 "
             );
-            return;
         }
-        Some("--daemon") => {
+        Some("--daemon") => run_async(async {
             let spotify = make_client();
             auth::authenticate(&spotify).await;
             let poll_secs = config::load().map(|c| c.poll_interval_secs).unwrap_or(5);
             let web_port = parse_web_port(&args);
             daemon::run(spotify, poll_secs, web_port).await;
-        }
-        Some("auth") => {
+        }),
+        Some("auth") => run_async(async {
             let spotify = make_client();
             match args.get(2).map(|s| s.as_str()) {
                 Some("login") => auth::login(&spotify).await,
                 _ => auth::status(&spotify).await,
             }
-        }
+        }),
         Some("config") => config::init(),
         Some("restart") => {
             daemon::kill();
-            let spotify = make_client();
-            auth::authenticate(&spotify).await;
-            let poll_secs = config::load().map(|c| c.poll_interval_secs).unwrap_or(5);
-            let web_port = parse_web_port(&args);
-            daemon::run(spotify, poll_secs, web_port).await;
+            client::spawn_daemon();
+            eprintln!("daemon restarted");
         }
         Some("stop") => daemon::kill(),
         _ => {

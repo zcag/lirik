@@ -13,7 +13,7 @@ fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
-fn spawn_daemon() {
+pub fn spawn_daemon() {
     let exe = std::env::current_exe().unwrap();
     Command::new(exe)
         .arg("--daemon")
@@ -86,17 +86,9 @@ pub fn json(offset_ms: i64) {
     };
 
     let lyric = current_lyric(&state, &np, offset_ms);
-    let out = serde_json::json!({
-        "artist": np.artist,
-        "track": np.track,
-        "progress_ms": np.progress_ms,
-        "progress": np.progress,
-        "duration_ms": np.duration_ms,
-        "duration": np.duration,
-        "is_playing": np.is_playing,
-        "lyric": lyric,
-        "lyrics": state.lyrics,
-    });
+    let mut out = serde_json::to_value(&np).unwrap();
+    out["lyric"] = serde_json::json!(lyric);
+    out["lyrics"] = serde_json::json!(state.lyrics);
     println!("{}", serde_json::to_string(&out).unwrap());
 }
 

@@ -10,11 +10,21 @@ pub const SOCK_PATH: &str = "/tmp/lirik.sock";
 pub const PID_PATH: &str = "/tmp/lirik.pid";
 
 pub fn kill() {
-    if let Ok(pid) = std::fs::read_to_string(PID_PATH) {
-        let pid = pid.trim();
-        std::process::Command::new("kill").arg(pid).output().ok();
-        // wait for process to release sockets
-        std::thread::sleep(Duration::from_millis(200));
+    if let Ok(raw) = std::fs::read_to_string(PID_PATH) {
+        if let Ok(pid) = raw.trim().parse::<i32>() {
+            unsafe { libc::kill(pid, libc::SIGTERM); }
+            for _ in 0..20 {
+                std::thread::sleep(Duration::from_millis(50));
+                if unsafe { libc::kill(pid, 0) } != 0 {
+                    break;
+                }
+            }
+            // force kill if still alive
+            if unsafe { libc::kill(pid, 0) } == 0 {
+                unsafe { libc::kill(pid, libc::SIGKILL); }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
     }
     let _ = std::fs::remove_file(SOCK_PATH);
     let _ = std::fs::remove_file(PID_PATH);

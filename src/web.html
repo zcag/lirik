@@ -8,30 +8,58 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{
-  background:#0d0d0d;
+  background:#0a0a0a;
   color:#444;
-  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  font-family:'SF Pro Display',-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
   height:100vh;
   display:flex;
   flex-direction:column;
   overflow:hidden;
 }
 #header{
-  padding:2rem 2rem 1.5rem;
-  text-align:center;
+  padding:1.8rem 2rem 1.4rem;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:1.4rem;
   flex-shrink:0;
+  border-bottom:1px solid #161616;
 }
-#track{
-  font-size:1.2rem;
+#art{
+  width:64px;height:64px;
+  border-radius:8px;
+  object-fit:cover;
+  flex-shrink:0;
+  display:none;
+  box-shadow:0 2px 12px rgba(0,0,0,.5);
+}
+#meta{text-align:left;min-width:0}
+#track-name{
+  font-size:1.1rem;
   color:#eee;
-  margin-bottom:.6rem;
+  font-weight:600;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
 }
-#track .artist{font-weight:700}
-#track .sep{color:#444}
-#track .icon{color:#78c878;margin-left:.3rem}
+#artist-name{
+  font-size:.9rem;
+  color:#888;
+  margin-bottom:.15rem;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+#album-name{
+  font-size:.75rem;
+  color:#444;
+  margin-bottom:.6rem;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
 .bar{
-  max-width:500px;
-  margin:0 auto;
+  width:280px;
   height:3px;
   background:#1a1a1a;
   border-radius:2px;
@@ -39,17 +67,28 @@ body{
 }
 .bar-fill{
   height:100%;
-  background:#78c878;
+  background:linear-gradient(90deg,#5b9a5b,#78c878);
   border-radius:2px;
   width:0%;
-  transition:width .15s linear;
+  transition:width .3s linear;
 }
 #time{
-  font-size:.8rem;
-  margin-top:.4rem;
-  color:#444;
+  display:flex;
+  justify-content:space-between;
+  width:280px;
+  font-size:.7rem;
+  margin-top:.25rem;
+  color:#333;
+  font-variant-numeric:tabular-nums;
 }
 #time .elapsed{color:#78c878}
+#icon{
+  color:#78c878;
+  font-size:1.2rem;
+  margin-left:.6rem;
+  flex-shrink:0;
+  opacity:.7;
+}
 #lyrics{
   flex:1;
   overflow-y:auto;
@@ -60,35 +99,44 @@ body{
 #lyrics::-webkit-scrollbar{display:none}
 .spacer{height:45vh}
 .line{
-  padding:.35rem 0;
-  font-size:1.15rem;
-  transition:color .3s,transform .3s;
-  line-height:1.6;
+  padding:.4rem 0;
+  font-size:1.2rem;
+  transition:color .4s,transform .4s,font-size .4s;
+  line-height:1.7;
+  cursor:default;
 }
 .line.active{
   color:#78c878;
   font-weight:600;
-  font-size:1.35rem;
-  transform:scale(1.02);
+  font-size:1.45rem;
+  transform:scale(1.03);
 }
-.line.near{color:#666}
+.line.near{color:#555}
+.line.far{color:#2a2a2a}
 #empty{
-  color:#333;
+  color:#2a2a2a;
   padding-top:30vh;
   font-size:1.1rem;
+  letter-spacing:.05em;
 }
 </style>
 </head>
 <body>
 <div id="header">
-  <div id="track">-</div>
-  <div class="bar"><div class="bar-fill"></div></div>
-  <div id="time"></div>
+  <img id="art" src="" alt="">
+  <div id="meta">
+    <div id="track-name">-</div>
+    <div id="artist-name"></div>
+    <div id="album-name"></div>
+    <div class="bar"><div class="bar-fill"></div></div>
+    <div id="time"><span class="elapsed">-</span><span>-</span></div>
+  </div>
+  <div id="icon"></div>
 </div>
 <div id="lyrics"><div id="empty">waiting for music...</div></div>
 
 <script>
-let state=null,lastTrack='';
+let state=null,lastTrack='',lastArt='';
 
 async function poll(){
   try{state=await(await fetch('/api/state')).json()}catch(e){}
@@ -117,14 +165,22 @@ function findLine(lines,ms){
 function render(){
   if(!state)return;
   const n=state.now_playing;
-  const trackEl=document.getElementById('track');
+  const trackEl=document.getElementById('track-name');
+  const artistEl=document.getElementById('artist-name');
+  const albumEl=document.getElementById('album-name');
+  const artEl=document.getElementById('art');
+  const iconEl=document.getElementById('icon');
   const timeEl=document.getElementById('time');
   const fill=document.querySelector('.bar-fill');
   const box=document.getElementById('lyrics');
 
   if(!n){
     trackEl.textContent='nothing playing';
-    timeEl.textContent='';
+    artistEl.textContent='';
+    albumEl.textContent='';
+    artEl.style.display='none';
+    iconEl.textContent='';
+    timeEl.innerHTML='<span>-</span><span>-</span>';
     fill.style.width='0%';
     document.title='lirik';
     return;
@@ -132,12 +188,23 @@ function render(){
 
   const p=progress();
   const ratio=n.duration_ms>0?p/n.duration_ms:0;
-  const icon=n.is_playing?'\u25b6':'\u23f8';
 
-  trackEl.innerHTML=`<span class="artist">${esc(n.artist)}</span>`+
-    `<span class="sep"> \u2014 </span>${esc(n.track)}`+
-    `<span class="icon">${icon}</span>`;
-  timeEl.innerHTML=`<span class="elapsed">${fmt(p)}</span> / ${fmt(n.duration_ms)}`;
+  trackEl.textContent=n.track;
+  artistEl.textContent=n.artist;
+  albumEl.textContent=n.album||'';
+  iconEl.textContent=n.is_playing?'\u25b6':'\u23f8';
+
+  const art=n.album_art||'';
+  if(art&&art!==lastArt){
+    lastArt=art;
+    artEl.src=art;
+    artEl.style.display='block';
+  }else if(!art){
+    artEl.style.display='none';
+    lastArt='';
+  }
+
+  timeEl.innerHTML=`<span class="elapsed">${fmt(p)}</span><span>${fmt(n.duration_ms)}</span>`;
   fill.style.width=(ratio*100).toFixed(1)+'%';
   document.title=`${n.artist} \u2014 ${n.track}`;
 
@@ -161,6 +228,7 @@ function render(){
       const d=Math.abs(i-idx);
       el.classList.toggle('active',i===idx);
       el.classList.toggle('near',d>0&&d<=2);
+      el.classList.toggle('far',d>2);
     });
     if(idx>=0&&els[idx]){
       els[idx].scrollIntoView({behavior:'smooth',block:'center'});
