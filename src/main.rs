@@ -1,54 +1,20 @@
-use rspotify::{prelude::*, scopes, AuthCodeSpotify, Config, Credentials, OAuth};
-use std::io::{Read, Write};
-use std::net::TcpListener;
+mod auth;
+mod client;
+mod config;
+mod daemon;
+mod lyrics;
+mod spotify;
+mod tui;
+mod watch;
 
-fn extract_code(request: &str) -> Option<String> {
-    let path = request.lines().next()?.split_whitespace().nth(1)?;
-    let query = path.split('?').nth(1)?;
-    query
-        .split('&')
-        .find_map(|p| p.strip_prefix("code="))
-        .map(|s| s.to_string())
-}
+use rspotify::{scopes, AuthCodeSpotify, Config, Credentials, OAuth};
+use std::env;
 
-async fn authenticate(spotify: &AuthCodeSpotify) {
-    // try cached token first
-    let has_token = match spotify.read_token_cache(true).await {
-        Ok(Some(token)) => {
-            *spotify.token.lock().await.unwrap() = Some(token);
-            // check if it actually works (might be expired without refresh token)
-            spotify.current_playing(None, None::<Vec<_>>).await.is_ok()
-        }
-        _ => false,
-    };
-    if has_token {
-        return;
-    }
+fn make_client() -> AuthCodeSpotify {
+    config::apply_env();
 
-    let url = spotify.get_authorize_url(false).unwrap();
-    let listener = TcpListener::bind("127.0.0.1:8888").expect("failed to bind :8888");
-
-    eprintln!("opening browser for spotify auth...");
-    open::that(&url).ok();
-
-    let (mut stream, _) = listener.accept().unwrap();
-    let mut buf = [0u8; 2048];
-    let n = stream.read(&mut buf).unwrap();
-    let request = String::from_utf8_lossy(&buf[..n]);
-
-    let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n\
-        <html><body><h3>done, you can close this tab</h3></body></html>";
-    stream.write_all(response.as_bytes()).ok();
-
-    let code = extract_code(&request).expect("no auth code in callback");
-    spotify.request_token(&code).await.unwrap();
-    spotify.write_token_cache().await.unwrap();
-}
-
-#[tokio::main]
-async fn main() {
     let creds = Credentials::from_env()
-        .expect("set RSPOTIFY_CLIENT_ID and RSPOTIFY_CLIENT_SECRET");
+        .expect("set RSPOTIFY_CLIENT_ID and RSPOTIFY_CLIENT_SECRET (or run `lirik config`)");
     let oauth = OAuth::from_env(scopes!(
         "user-read-currently-playing",
         "user-read-playback-state"
@@ -61,49 +27,101 @@ async fn main() {
         ..Default::default()
     };
 
-    let spotify = AuthCodeSpotify::with_config(creds, oauth, config);
-    authenticate(&spotify).await;
+    AuthCodeSpotify::with_config(creds, oauth, config)
+}
 
-    match spotify.current_playing(None, None::<Vec<_>>).await {
-        Ok(Some(ctx)) => {
-            let progress = ctx.progress.unwrap_or_default();
-            let prog_s = progress.num_seconds();
-            let prog_ms = progress.num_milliseconds() % 1000;
+fn has(args: &[String], short: char, long: &str) -> bool {
+    args.iter().any(|a| {
+        a == long
+            || (a.starts_with('-')
+                && !a.starts_with("--")
+                && a[1..].contains(short))
+    })
+}
 
-            match ctx.item {
-                Some(rspotify::model::PlayableItem::Track(track)) => {
-                    let artists: Vec<_> =
-                        track.artists.iter().map(|a| a.name.as_str()).collect();
-                    let dur = track.duration.num_seconds();
+fn parse_offset(args: &[String]) -> i64 {
+    args.iter()
+        .position(|a| a == "--offset" || a == "-o")
+        .and_then(|i| args.get(i + 1))
+        .and_then(|s| s.parse().ok())
+        .unwrap_or_else(|| config::load().map(|c| c.lyrics_offset_ms).unwrap_or(0))
+}
 
-                    println!("{} - {}", artists.join(", "), track.name);
-                    println!(
-                        "{}:{:02}.{:03} / {}:{:02}",
-                        prog_s / 60,
-                        prog_s % 60,
-                        prog_ms,
-                        dur / 60,
-                        dur % 60
-                    );
-                    if ctx.is_playing {
-                        println!("▶ playing");
-                    } else {
-                        println!("⏸ paused");
-                    }
-                }
-                Some(rspotify::model::PlayableItem::Episode(ep)) => {
-                    println!("{} (podcast)", ep.name);
-                    println!(
-                        "at {}:{:02}.{:03}",
-                        prog_s / 60,
-                        prog_s % 60,
-                        prog_ms
-                    );
-                }
-                None => println!("playing but no track info available"),
+#[tokio::main]
+async fn main() {
+    let args: Vec<String> = env::args().collect();
+
+    match args.get(1).map(|s| s.as_str()) {
+        Some("--help" | "-h") => {
+            print!(
+                "\
+lirik - spotify lyrics in your terminal
+
+usage: lirik [options]
+       lirik <command>
+
+options:
+  (default)             interactive TUI with synced lyrics
+  -j, --json            full JSON (track, progress, current lyric, all lyrics)
+  -p, --plain           print all lyrics to stdout
+  -c, --current         with -p: from current line to end
+  -r, --reverse         with -p: reverse output order
+  -w, --watch           stream lyrics line by line as they play
+  -o, --offset <ms>     shift lyrics timing (positive = earlier)
+
+  flags combine: -pcr = --plain --current --reverse
+
+commands:
+  auth                  show auth & credential status
+  auth login            open browser to authenticate with Spotify
+  config                create/show config (~/.config/lirik/config.toml)
+  restart               kill and restart daemon in foreground
+  stop                  kill daemon
+  --daemon              start background daemon (auto-started normally)
+  -h, --help            show this help
+"
+            );
+            return;
+        }
+        Some("--daemon") => {
+            let spotify = make_client();
+            auth::authenticate(&spotify).await;
+            let poll_secs = config::load().map(|c| c.poll_interval_secs).unwrap_or(5);
+            daemon::run(spotify, poll_secs).await;
+        }
+        Some("auth") => {
+            let spotify = make_client();
+            match args.get(2).map(|s| s.as_str()) {
+                Some("login") => auth::login(&spotify).await,
+                _ => auth::status(&spotify).await,
             }
         }
-        Ok(None) => println!("nothing playing right now"),
-        Err(e) => eprintln!("error: {e}"),
+        Some("config") => config::init(),
+        Some("restart") => {
+            daemon::kill();
+            let spotify = make_client();
+            auth::authenticate(&spotify).await;
+            let poll_secs = config::load().map(|c| c.poll_interval_secs).unwrap_or(5);
+            daemon::run(spotify, poll_secs).await;
+        }
+        Some("stop") => daemon::kill(),
+        _ => {
+            let json = has(&args, 'j', "--json");
+            let watch = has(&args, 'w', "--watch");
+            let plain = has(&args, 'p', "--plain");
+            let current = has(&args, 'c', "--current");
+            let reverse = has(&args, 'r', "--reverse");
+            let offset = parse_offset(&args);
+
+            if watch {
+                watch::run(json, offset);
+            } else if plain {
+                client::plain(current, reverse, offset);
+            } else if json {
+                client::json(offset);
+            } else {
+                tui::run(offset);
+            }
+        }
     }
 }
