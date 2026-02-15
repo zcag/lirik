@@ -1,0 +1,8 @@
+#!/bin/env bash
+
+# Go to https://developer.spotify.com/dashboard → create an app
+# Add http://localhost:8888/callback as a redirect URI in the app settings
+export RSPOTIFY_CLIENT_ID="72ce01e76efb45b59872e5291df0ddf2"
+export RSPOTIFY_CLIENT_SECRET="60ddf7e1129647398fa76cd038eeb973"
+export RSPOTIFY_REDIRECT_URI="http://127.0.0.1:8888/callback"
+cargo run

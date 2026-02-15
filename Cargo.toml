@@ -1,0 +1,23 @@
+[package]
+name = "liri"
+version = "0.1.0"
+edition = "2024"
+description = "Spotify currently playing info and lyrics display"
+license = "MIT"
+repository = "https://github.com/zcag/liri"
+keywords = ["cli", "spotify", "lyrics", "music"]
+categories = ["command-line-utilities"]
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/liri-{ target }.tar.gz"
+bin-dir = "liri-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/v{ version }/liri-x86_64-unknown-linux-musl.tar.gz"
+bin-dir = "liri-x86_64-unknown-linux-musl/{ bin }"
+
+[dependencies]
+open = "5"
+rspotify = { version = "0.13", features = ["cli"] }
+tokio = { version = "1", features = ["full"] }
