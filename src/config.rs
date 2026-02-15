@@ -8,6 +8,7 @@ pub struct Config {
     pub redirect_uri: String,
     pub poll_interval_secs: u64,
     pub lyrics_offset_ms: i64,
+    pub web_port: u16,
 }
 
 impl Default for Config {
@@ -18,6 +19,7 @@ impl Default for Config {
             redirect_uri: "http://127.0.0.1:8888/callback".into(),
             poll_interval_secs: 5,
             lyrics_offset_ms: 0,
+            web_port: 0,
         }
     }
 }

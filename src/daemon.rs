@@ -1,4 +1,4 @@
-use crate::{lyrics, spotify};
+use crate::{lyrics, spotify, web};
 use rspotify::AuthCodeSpotify;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -13,6 +13,8 @@ pub fn kill() {
     if let Ok(pid) = std::fs::read_to_string(PID_PATH) {
         let pid = pid.trim();
         std::process::Command::new("kill").arg(pid).output().ok();
+        // wait for process to release sockets
+        std::thread::sleep(Duration::from_millis(200));
     }
     let _ = std::fs::remove_file(SOCK_PATH);
     let _ = std::fs::remove_file(PID_PATH);
@@ -25,7 +27,7 @@ fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
-pub async fn run(client: AuthCodeSpotify, poll_secs: u64) {
+pub async fn run(client: AuthCodeSpotify, poll_secs: u64, web_port: u16) {
     std::fs::write(PID_PATH, std::process::id().to_string()).ok();
     let _ = std::fs::remove_file(SOCK_PATH);
 
@@ -36,6 +38,12 @@ pub async fn run(client: AuthCodeSpotify, poll_secs: u64) {
         lyrics: None,
     }));
 
+    // web server
+    if web_port > 0 {
+        tokio::spawn(web::serve(web_port, state.clone()));
+    }
+
+    // poll loop
     let poll_state = state.clone();
     let poll_interval = Duration::from_secs(poll_secs);
     let poll_handle = tokio::spawn(async move {
@@ -68,6 +76,7 @@ pub async fn run(client: AuthCodeSpotify, poll_secs: u64) {
         }
     });
 
+    // unix socket
     let accept_handle = tokio::spawn(async move {
         loop {
             if let Ok((mut stream, _)) = listener.accept().await {

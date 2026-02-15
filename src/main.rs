@@ -6,6 +6,7 @@ mod lyrics;
 mod spotify;
 mod tui;
 mod watch;
+mod web;
 
 use rspotify::{scopes, AuthCodeSpotify, Config, Credentials, OAuth};
 use std::env;
@@ -39,6 +40,17 @@ fn has(args: &[String], short: char, long: &str) -> bool {
     })
 }
 
+fn parse_web_port(args: &[String]) -> u16 {
+    args.iter()
+        .position(|a| a == "--web")
+        .map(|i| {
+            args.get(i + 1)
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(3000)
+        })
+        .unwrap_or_else(|| config::load().map(|c| c.web_port).unwrap_or(0))
+}
+
 fn parse_offset(args: &[String]) -> i64 {
     args.iter()
         .position(|a| a == "--offset" || a == "-o")
@@ -68,6 +80,7 @@ options:
   -r, --reverse         with -p: reverse output order
   -w, --watch           stream lyrics line by line as they play
   -o, --offset <ms>     shift lyrics timing (positive = earlier)
+  --web [port]          enable web UI (default port: 3000)
 
   flags combine: -pcr = --plain --current --reverse
 
@@ -87,7 +100,8 @@ commands:
             let spotify = make_client();
             auth::authenticate(&spotify).await;
             let poll_secs = config::load().map(|c| c.poll_interval_secs).unwrap_or(5);
-            daemon::run(spotify, poll_secs).await;
+            let web_port = parse_web_port(&args);
+            daemon::run(spotify, poll_secs, web_port).await;
         }
         Some("auth") => {
             let spotify = make_client();
@@ -102,7 +116,8 @@ commands:
             let spotify = make_client();
             auth::authenticate(&spotify).await;
             let poll_secs = config::load().map(|c| c.poll_interval_secs).unwrap_or(5);
-            daemon::run(spotify, poll_secs).await;
+            let web_port = parse_web_port(&args);
+            daemon::run(spotify, poll_secs, web_port).await;
         }
         Some("stop") => daemon::kill(),
         _ => {
