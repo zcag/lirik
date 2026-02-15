@@ -2,6 +2,8 @@
 
 Spotify lyrics in your terminal. Shows synced lyrics from [LRCLIB](https://lrclib.net) with real-time progress tracking.
 
+Directly inspired by great [sptlrx](https://github.com/raitonoberu/sptlrx).
+
 ## Install
 
 ```bash
