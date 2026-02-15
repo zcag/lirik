@@ -89,6 +89,30 @@ body{
   flex-shrink:0;
   opacity:.7;
 }
+#controls{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:.8rem;
+  padding:.6rem 0;
+  flex-shrink:0;
+  border-bottom:1px solid #161616;
+}
+#controls button{
+  background:none;
+  border:none;
+  color:#666;
+  font-size:1.3rem;
+  cursor:pointer;
+  padding:.3rem .5rem;
+  border-radius:6px;
+  transition:color .2s,background .2s;
+  line-height:1;
+}
+#controls button:hover{color:#eee;background:#1a1a1a}
+#controls button:active{color:#78c878}
+#controls .play-btn{font-size:1.6rem;color:#78c878}
+#controls .play-btn:hover{color:#9ae09a}
 #lyrics{
   flex:1;
   overflow-y:auto;
@@ -133,10 +157,21 @@ body{
   </div>
   <div id="icon"></div>
 </div>
+<div id="controls">
+  <button onclick="cmd('prev')" title="Previous">&#9198;</button>
+  <button class="play-btn" id="play-btn" onclick="cmd('toggle')" title="Play/Pause">&#9654;</button>
+  <button onclick="cmd('next')" title="Next">&#9197;</button>
+</div>
 <div id="lyrics"><div id="empty">waiting for music...</div></div>
 
 <script>
 let state=null,lastTrack='',lastArt='';
+
+async function cmd(c,arg){
+  const body=arg?JSON.stringify({cmd:c,arg:String(arg)}):JSON.stringify({cmd:c});
+  try{await fetch('/api/cmd',{method:'POST',body})}catch(e){}
+  setTimeout(poll,300);
+}
 
 async function poll(){
   try{state=await(await fetch('/api/state')).json()}catch(e){}
@@ -193,6 +228,7 @@ function render(){
   artistEl.textContent=n.artist;
   albumEl.textContent=n.album||'';
   iconEl.textContent=n.is_playing?'\u25b6':'\u23f8';
+  document.getElementById('play-btn').innerHTML=n.is_playing?'&#9208;':'&#9654;';
 
   const art=n.album_art||'';
   if(art&&art!==lastArt){

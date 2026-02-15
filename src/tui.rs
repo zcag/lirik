@@ -278,8 +278,57 @@ pub fn run(offset_ms: i64) {
 
         if event::poll(Duration::from_millis(100)).unwrap() {
             if let Event::Key(key) = event::read().unwrap() {
-                if key.code == KeyCode::Char('q') || key.code == KeyCode::Esc {
-                    break;
+                match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => break,
+                    KeyCode::Char(' ') => {
+                        let _ = client::send_command(r#"{"cmd":"toggle"}"#);
+                        app.last_fetch = Instant::now() - Duration::from_secs(10);
+                    }
+                    KeyCode::Char('n') => {
+                        let _ = client::send_command(r#"{"cmd":"next"}"#);
+                        app.last_fetch = Instant::now() - Duration::from_secs(10);
+                    }
+                    KeyCode::Char('p') => {
+                        let _ = client::send_command(r#"{"cmd":"prev"}"#);
+                        app.last_fetch = Instant::now() - Duration::from_secs(10);
+                    }
+                    KeyCode::Char('+') | KeyCode::Char('=') => {
+                        let vol = app.state.now_playing.as_ref()
+                            .and_then(|n| n.device.as_ref())
+                            .and_then(|d| d.volume)
+                            .unwrap_or(50);
+                        let new_vol = (vol + 5).min(100);
+                        let _ = client::send_command(&format!(r#"{{"cmd":"volume","arg":"{new_vol}"}}"#));
+                        app.last_fetch = Instant::now() - Duration::from_secs(10);
+                    }
+                    KeyCode::Char('-') => {
+                        let vol = app.state.now_playing.as_ref()
+                            .and_then(|n| n.device.as_ref())
+                            .and_then(|d| d.volume)
+                            .unwrap_or(50);
+                        let new_vol = vol.saturating_sub(5);
+                        let _ = client::send_command(&format!(r#"{{"cmd":"volume","arg":"{new_vol}"}}"#));
+                        app.last_fetch = Instant::now() - Duration::from_secs(10);
+                    }
+                    KeyCode::Char('s') => {
+                        let _ = client::send_command(r#"{"cmd":"shuffle"}"#);
+                        app.last_fetch = Instant::now() - Duration::from_secs(10);
+                    }
+                    KeyCode::Char('r') => {
+                        let _ = client::send_command(r#"{"cmd":"repeat"}"#);
+                        app.last_fetch = Instant::now() - Duration::from_secs(10);
+                    }
+                    KeyCode::Left => {
+                        let pos = app.progress_ms().saturating_sub(10000);
+                        let _ = client::send_command(&format!(r#"{{"cmd":"seek","arg":"{pos}"}}"#));
+                        app.last_fetch = Instant::now() - Duration::from_secs(10);
+                    }
+                    KeyCode::Right => {
+                        let pos = app.progress_ms() + 10000;
+                        let _ = client::send_command(&format!(r#"{{"cmd":"seek","arg":"{pos}"}}"#));
+                        app.last_fetch = Instant::now() - Duration::from_secs(10);
+                    }
+                    _ => {}
                 }
             }
         }

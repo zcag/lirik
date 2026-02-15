@@ -65,6 +65,30 @@ lirik -wj               stream as JSON (ndjson)
 
 Short flags combine: `-pcr` = `--plain --current --reverse`
 
+### Playback
+
+| Command | Description |
+|---------|-------------|
+| `play` / `toggle` | Toggle play/pause |
+| `pause` | Pause playback |
+| `next` | Skip to next track |
+| `prev` | Go to previous track |
+| `vol <0-100>` | Set volume |
+
+### TUI keybindings
+
+| Key | Action |
+|-----|--------|
+| `space` | Toggle play/pause |
+| `n` | Next track |
+| `p` | Previous track |
+| `+` / `=` | Volume up 5% |
+| `-` | Volume down 5% |
+| `s` | Toggle shuffle |
+| `r` | Cycle repeat (off / context / track) |
+| `left` / `right` | Seek -10s / +10s |
+| `q` / `Esc` | Quit |
+
 ### Commands
 
 | Command | Description |
@@ -74,6 +98,17 @@ Short flags combine: `-pcr` = `--plain --current --reverse`
 | `config` | Create/show config file |
 | `restart` | Kill and restart daemon in foreground |
 | `stop` | Kill daemon |
+
+### Web UI
+
+Start with `--web` to enable the web interface:
+
+```
+lirik --web          # default port 3000
+lirik --web 8080     # custom port
+```
+
+Or set `web_port` in config to always enable it. The web UI shows synced lyrics with playback controls (play/pause, next, previous).
 
 ## Architecture
 
@@ -141,6 +176,7 @@ next lyric line
 | `redirect_uri` | `http://127.0.0.1:8888/callback` | OAuth redirect URI |
 | `poll_interval_secs` | `5` | How often the daemon polls Spotify (seconds) |
 | `lyrics_offset_ms` | `0` | Default lyrics timing offset (ms, positive = earlier) |
+| `web_port` | `0` | Web UI port (0 = disabled, set to enable by default) |
 
 Env vars (`RSPOTIFY_CLIENT_ID`, `RSPOTIFY_CLIENT_SECRET`, `RSPOTIFY_REDIRECT_URI`) override config values.
 

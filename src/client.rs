@@ -1,7 +1,7 @@
 use crate::daemon::SOCK_PATH;
 use crate::lyrics;
 use crate::spotify::{fmt_time, NowPlaying, State};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::process::Command;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -90,6 +90,34 @@ pub fn json(offset_ms: i64) {
     out["lyric"] = serde_json::json!(lyric);
     out["lyrics"] = serde_json::json!(state.lyrics);
     println!("{}", serde_json::to_string(&out).unwrap());
+}
+
+pub fn send_command(cmd_json: &str) -> Result<String, String> {
+    let mut stream = connect().ok_or("failed to connect to daemon")?;
+    stream
+        .write_all(cmd_json.as_bytes())
+        .map_err(|e| format!("write failed: {e}"))?;
+    stream
+        .write_all(b"\n")
+        .map_err(|e| format!("write failed: {e}"))?;
+    stream.flush().map_err(|e| format!("flush failed: {e}"))?;
+    stream
+        .shutdown(std::net::Shutdown::Write)
+        .map_err(|e| format!("shutdown failed: {e}"))?;
+
+    let reader = BufReader::new(stream);
+    let line = reader
+        .lines()
+        .next()
+        .ok_or("no response")?
+        .map_err(|e| format!("read failed: {e}"))?;
+
+    let v: serde_json::Value = serde_json::from_str(&line).map_err(|e| format!("bad json: {e}"))?;
+    if let Some(err) = v.get("error").and_then(|e| e.as_str()) {
+        Err(err.to_string())
+    } else {
+        Ok("ok".to_string())
+    }
 }
 
 pub fn plain(from_current: bool, reverse: bool, offset_ms: i64) {

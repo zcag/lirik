@@ -18,6 +18,7 @@ pkg-url = "{ repo }/releases/download/v{ version }/lirik-x86_64-unknown-linux-mu
 bin-dir = "lirik-x86_64-unknown-linux-musl/{ bin }"
 
 [dependencies]
+chrono = "0.4"
 crossterm = "0.28"
 dirs = "6"
 image = "0.25"

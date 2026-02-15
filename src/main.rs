@@ -18,7 +18,8 @@ fn make_client() -> AuthCodeSpotify {
         .expect("set RSPOTIFY_CLIENT_ID and RSPOTIFY_CLIENT_SECRET (or run `lirik config`)");
     let oauth = OAuth::from_env(scopes!(
         "user-read-currently-playing",
-        "user-read-playback-state"
+        "user-read-playback-state",
+        "user-modify-playback-state"
     ))
     .expect("set RSPOTIFY_REDIRECT_URI=http://127.0.0.1:8888/callback");
 
@@ -59,6 +60,16 @@ fn parse_offset(args: &[String]) -> i64 {
         .unwrap_or_else(|| config::load().map(|c| c.lyrics_offset_ms).unwrap_or(0))
 }
 
+fn print_cmd_result(result: &Result<String, String>) {
+    match result {
+        Ok(msg) => println!("{msg}"),
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+    }
+}
+
 fn run_async(f: impl std::future::Future<Output = ()>) {
     tokio::runtime::Runtime::new().unwrap().block_on(f);
 }
@@ -86,6 +97,13 @@ options:
   --web [port]          enable web UI (default port: 3000)
 
   flags combine: -pcr = --plain --current --reverse
+
+playback:
+  play, toggle          toggle play/pause
+  pause                 pause playback
+  next                  skip to next track
+  prev                  go to previous track
+  vol <0-100>           set volume
 
 commands:
   auth                  show auth & credential status
@@ -119,6 +137,17 @@ commands:
             eprintln!("daemon restarted");
         }
         Some("stop") => daemon::kill(),
+        Some("play" | "toggle") => print_cmd_result(&client::send_command(r#"{"cmd":"toggle"}"#)),
+        Some("pause") => print_cmd_result(&client::send_command(r#"{"cmd":"pause"}"#)),
+        Some("next") => print_cmd_result(&client::send_command(r#"{"cmd":"next"}"#)),
+        Some("prev") => print_cmd_result(&client::send_command(r#"{"cmd":"prev"}"#)),
+        Some("vol") => {
+            let val = args.get(2).and_then(|s| s.parse::<u8>().ok()).unwrap_or_else(|| {
+                eprintln!("usage: lirik vol <0-100>");
+                std::process::exit(1);
+            });
+            print_cmd_result(&client::send_command(&format!(r#"{{"cmd":"volume","arg":"{val}"}}"#)));
+        }
         _ => {
             let json = has(&args, 'j', "--json");
             let watch = has(&args, 'w', "--watch");
