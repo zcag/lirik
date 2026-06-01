@@ -14,6 +14,19 @@ fn now_ms() -> u64 {
 }
 
 pub fn spawn_daemon() {
+    use crate::daemon::PID_PATH;
+    use std::os::unix::io::AsRawFd;
+
+    // Try to acquire the lock — if we can't, a daemon is already running/starting
+    let Ok(file) = std::fs::File::create(PID_PATH) else { return };
+    let rc = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    if rc != 0 {
+        // Lock held by existing daemon, no need to spawn
+        return;
+    }
+    // Release the lock so the child daemon can acquire it
+    drop(file);
+
     let exe = std::env::current_exe().unwrap();
     Command::new(exe)
         .arg("--daemon")

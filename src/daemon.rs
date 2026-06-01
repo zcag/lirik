@@ -120,6 +120,17 @@ pub async fn execute_cmd(
 }
 
 pub async fn run(client: AuthCodeSpotify, poll_secs: u64, web_port: u16) {
+    use std::os::unix::io::AsRawFd;
+
+    let pid_file = std::fs::File::create(PID_PATH).expect("failed to create pid file");
+    let rc = unsafe { libc::flock(pid_file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    if rc != 0 {
+        eprintln!("daemon already running");
+        std::process::exit(0);
+    }
+    // Keep pid_file open (and locked) for the daemon's lifetime
+    std::mem::forget(pid_file);
+
     std::fs::write(PID_PATH, std::process::id().to_string()).ok();
     let _ = std::fs::remove_file(SOCK_PATH);
 
