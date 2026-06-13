@@ -30,6 +30,16 @@ pub fn path() -> PathBuf {
         .join("lirik/config.toml")
 }
 
+/// Absolute token-cache path. Fixed location (not cwd-relative) so the daemon,
+/// `auth login`, and every client agree regardless of where they're launched.
+pub fn token_cache_path() -> PathBuf {
+    let dir = dirs::cache_dir()
+        .unwrap_or_else(|| PathBuf::from("/tmp"))
+        .join("lirik");
+    std::fs::create_dir_all(&dir).ok();
+    dir.join("token.json")
+}
+
 pub fn load() -> Option<Config> {
     let contents = std::fs::read_to_string(path()).ok()?;
     toml::from_str(&contents).ok()

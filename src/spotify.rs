@@ -59,11 +59,14 @@ pub struct State {
     pub lyrics: Option<crate::lyrics::Lyrics>,
 }
 
-pub async fn now_playing(spotify: &AuthCodeSpotify) -> Option<NowPlaying> {
-    let ctx = spotify
-        .current_playback(None, None::<Vec<_>>)
-        .await
-        .ok()??;
+/// `Ok(None)` = nothing playing; `Ok(Some)` = a track/episode; `Err(())` = an API
+/// error (rate-limit / network / auth) — the caller backs off rather than hammering.
+pub async fn now_playing(spotify: &AuthCodeSpotify) -> Result<Option<NowPlaying>, ()> {
+    let ctx = match spotify.current_playback(None, None::<Vec<_>>).await {
+        Ok(Some(ctx)) => ctx,
+        Ok(None) => return Ok(None),
+        Err(_) => return Err(()),
+    };
     let progress_ms = ctx
         .progress
         .map(|p| p.num_milliseconds() as u64)
@@ -81,7 +84,8 @@ pub async fn now_playing(spotify: &AuthCodeSpotify) -> Option<NowPlaying> {
         uri: c.uri,
     });
 
-    match ctx.item? {
+    let Some(item) = ctx.item else { return Ok(None) };
+    match item {
         PlayableItem::Track(track) => {
             let artist = track
                 .artists
@@ -99,7 +103,7 @@ pub async fn now_playing(spotify: &AuthCodeSpotify) -> Option<NowPlaying> {
                 .external_urls
                 .get("spotify")
                 .cloned();
-            Some(NowPlaying {
+            Ok(Some(NowPlaying {
                 artist,
                 track: track.name,
                 album: track.album.name,
@@ -116,13 +120,13 @@ pub async fn now_playing(spotify: &AuthCodeSpotify) -> Option<NowPlaying> {
                 shuffle,
                 repeat,
                 context: play_context,
-            })
+            }))
         }
         PlayableItem::Episode(ep) => {
             let duration_ms = ep.duration.num_milliseconds() as u64;
             let album_art = ep.images.first().map(|img| img.url.clone());
             let spotify_url = ep.external_urls.get("spotify").cloned();
-            Some(NowPlaying {
+            Ok(Some(NowPlaying {
                 artist: ep.show.name,
                 track: ep.name,
                 album: String::new(),
@@ -139,7 +143,7 @@ pub async fn now_playing(spotify: &AuthCodeSpotify) -> Option<NowPlaying> {
                 shuffle,
                 repeat,
                 context: play_context,
-            })
+            }))
         }
     }
 }

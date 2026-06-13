@@ -4,7 +4,6 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 
 const BIND_ADDR: &str = "127.0.0.1:8888";
-const CACHE_FILE: &str = ".spotify_token_cache.json";
 
 fn extract_code(request: &str) -> Option<String> {
     let path = request.lines().next()?.split_whitespace().nth(1)?;
@@ -30,6 +29,25 @@ fn await_callback() -> String {
     extract_code(&request).expect("no auth code in callback")
 }
 
+/// Load the cached token into `spotify`, refreshing it via the stored
+/// refresh-token if the access-token has expired (rspotify rewrites the cache).
+/// Returns true if we end up with a live, usable token — so callers never fall
+/// back to an interactive browser login just because the access-token aged out.
+pub async fn load_cached(spotify: &AuthCodeSpotify) -> bool {
+    let Ok(Some(token)) = spotify.read_token_cache(true).await else {
+        return false;
+    };
+    let expired = token.is_expired();
+    *spotify.token.lock().await.unwrap() = Some(token);
+    // Authenticated == we hold a token that's live or refreshes cleanly. We do NOT
+    // probe with an API call: a 429/5xx/offline must mean "back off", never trigger
+    // a fresh browser login (that feedback loop is what caused the auth storm).
+    if expired {
+        return spotify.refresh_token().await.is_ok();
+    }
+    true
+}
+
 pub async fn status(spotify: &AuthCodeSpotify) {
     // env vars
     let has_id = std::env::var("RSPOTIFY_CLIENT_ID").is_ok();
@@ -42,20 +60,12 @@ pub async fn status(spotify: &AuthCodeSpotify) {
     println!("  RSPOTIFY_REDIRECT_URI    {}", if has_redirect { "set" } else { "missing" });
 
     // token cache
-    let cache_exists = std::path::Path::new(CACHE_FILE).exists();
-    let token_valid = if cache_exists {
-        if let Ok(Some(token)) = spotify.read_token_cache(true).await {
-            *spotify.token.lock().await.unwrap() = Some(token);
-            spotify.current_playing(None, None::<Vec<_>>).await.is_ok()
-        } else {
-            false
-        }
-    } else {
-        false
-    };
+    let cache_path = crate::config::token_cache_path();
+    let cache_exists = cache_path.exists();
+    let token_valid = cache_exists && load_cached(spotify).await;
 
     println!("\ntoken:");
-    println!("  cache file   {}", if cache_exists { CACHE_FILE } else { "not found" });
+    println!("  cache file   {}", if cache_exists { cache_path.display().to_string() } else { "not found".to_string() });
     println!("  status       {}", if token_valid { "valid" } else { "expired or missing" });
 
     if !has_id || !has_secret || !has_redirect {
@@ -84,11 +94,8 @@ pub async fn login(spotify: &AuthCodeSpotify) {
 }
 
 pub async fn authenticate(spotify: &AuthCodeSpotify) {
-    if let Ok(Some(token)) = spotify.read_token_cache(true).await {
-        *spotify.token.lock().await.unwrap() = Some(token);
-        if spotify.current_playing(None, None::<Vec<_>>).await.is_ok() {
-            return;
-        }
+    if load_cached(spotify).await {
+        return;
     }
 
     let url = spotify.get_authorize_url(false).unwrap();

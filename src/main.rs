@@ -26,6 +26,7 @@ fn make_client() -> AuthCodeSpotify {
     let config = Config {
         token_cached: true,
         token_refreshing: true,
+        cache_path: config::token_cache_path(),
         ..Default::default()
     };
 

@@ -155,8 +155,25 @@ pub async fn run(client: AuthCodeSpotify, poll_secs: u64, web_port: u16) {
     let poll_interval = Duration::from_secs(poll_secs);
     let poll_handle = tokio::spawn(async move {
         let mut current_track = String::new();
+        let mut backoff = poll_interval;
         loop {
-            let np = spotify::now_playing(&poll_client).await;
+            let np = match spotify::now_playing(&poll_client).await {
+                Ok(np) => {
+                    backoff = poll_interval;
+                    np
+                }
+                Err(()) => {
+                    // API error (rate-limit / network) — exponential back off up to
+                    // 5 min so a 429'd token isn't flogged every few seconds, which is
+                    // what kept Spotify throttling us. Keep last known state meanwhile.
+                    backoff = (backoff * 2).min(Duration::from_secs(300));
+                    tokio::select! {
+                        _ = tokio::time::sleep(backoff) => {}
+                        _ = poll_notify.notified() => {}
+                    }
+                    continue;
+                }
+            };
 
             let track_key = np
                 .as_ref()
